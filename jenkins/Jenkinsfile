@@ -60,7 +60,7 @@ EOF
                     docker compose up -d app
                     sleep 15
 
-                    STATUS=$(docker exec demo-app curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
+                    STATUS=$(docker exec demo-app python -c "import urllib.request; r=urllib.request.urlopen('http://localhost:5000/health'); print(r.getcode())")
                     if [ "$STATUS" != "200" ]; then
                         echo "Health check failed: HTTP $STATUS"
                         docker compose down app
@@ -68,7 +68,7 @@ EOF
                     fi
                     echo "Health check passed: HTTP $STATUS"
 
-                    METRICS=$(docker exec demo-app curl -s http://localhost:5000/metrics | head -c 20)
+                    METRICS=$(docker exec demo-app python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:5000/metrics').read(20))")
                     if [ -z "$METRICS" ]; then
                         echo "Metrics endpoint not responding"
                         docker compose down app
