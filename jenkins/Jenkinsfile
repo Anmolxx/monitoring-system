@@ -10,7 +10,7 @@ pipeline {
     environment {
         EC2_SSH_KEY = credentials('ec2-ssh-key')
         EC2_HOST    = credentials('ec2-host')
-        ALERT_EMAIL = credentials('alert-email')
+        ALERT_EMAIL = 'anmoldeepkaur1103@gmail.com'
     }
 
     stages {
