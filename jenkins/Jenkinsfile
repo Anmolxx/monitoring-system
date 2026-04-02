@@ -1,3 +1,167 @@
+// pipeline {
+//     agent any
+
+//     options {
+//         buildDiscarder(logRotator(numToKeepStr: '10'))
+//         disableConcurrentBuilds()
+//         timeout(time: 30, unit: 'MINUTES')
+//     }
+
+//     environment {
+//         EC2_SSH_KEY      = credentials('ec2-ssh-key')
+//         EC2_HOST         = credentials('ec2-host')
+//         ALERT_EMAIL      = 'anmoldeepkaur1103@gmail.com'
+//         GMAIL_CREDS      = credentials('gmail-smtp')
+//     }
+
+//     stages {
+//         stage('Checkout') {
+//             steps {
+//                 echo "Checking out code..."
+//                 checkout scm
+//             }
+//         }
+
+//         stage('Lint Dockerfile') {
+//             steps {
+//                 echo "Linting Dockerfile..."
+//                 sh 'docker run --rm -i hadolint/hadolint < app/Dockerfile || echo "Lint warnings found, continuing..."'
+//             }
+//         }
+
+//         stage('Build') {
+//             steps {
+//                 echo "Building Docker image..."
+//                 sh '''
+//                     # Create .env file for docker compose
+//                     cat > docker/.env << EOF
+// GF_SECURITY_ADMIN_PASSWORD=admin123
+// GF_SMTP_USER=$GMAIL_CREDS_USR
+// GF_SMTP_PASSWORD=$GMAIL_CREDS_PSW
+// GF_ALERT_EMAIL=anmoldeepkaur1103@gmail.com
+// EOF
+//                     cd docker
+//                     docker compose build app
+//                 '''
+//             }
+//         }
+
+//         stage('Test') {
+//             steps {
+//                 echo "Running health check test..."
+//                 sh '''
+//                     cat > docker/.env << EOF
+// GF_SECURITY_ADMIN_PASSWORD=admin123
+// GF_SMTP_USER=$GMAIL_CREDS_USR
+// GF_SMTP_PASSWORD=$GMAIL_CREDS_PSW
+// GF_ALERT_EMAIL=anmoldeepkaur1103@gmail.com
+// EOF
+//                     cd docker
+//                     docker compose up -d app
+//                     sleep 15
+
+//                     STATUS=$(docker exec demo-app python -c "import urllib.request; r=urllib.request.urlopen('http://localhost:5000/health'); print(r.getcode())")
+//                     if [ "$STATUS" != "200" ]; then
+//                         echo "Health check failed: HTTP $STATUS"
+//                         docker compose down app
+//                         exit 1
+//                     fi
+//                     echo "Health check passed: HTTP $STATUS"
+
+//                     METRICS=$(docker exec demo-app python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:5000/metrics').read(20))")
+//                     if [ -z "$METRICS" ]; then
+//                         echo "Metrics endpoint not responding"
+//                         docker compose down app
+//                         exit 1
+//                     fi
+//                     echo "Metrics endpoint working"
+
+//                     docker compose down app
+//                 '''
+//             }
+//         }
+
+//         stage('Deploy') {
+//             steps {
+//                 echo "Deploying to EC2..."
+//                 sshagent(['ec2-ssh-key']) {
+//                     sh '''
+//                         ssh -o StrictHostKeyChecking=no ubuntu@$EC2_HOST << 'ENDSSH'
+//                         cd /opt/monitoring
+//                         git pull origin main
+//                         cd docker
+//                         docker compose build app
+//                         docker compose up -d
+// ENDSSH
+//                     '''
+//                 }
+//             }
+//         }
+
+//         stage('Health Check') {
+//             steps {
+//                 echo "Verifying deployment..."
+//                 sh '''
+//                     for i in $(seq 1 10); do
+//                         STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EC2_HOST:5000/health || echo "000")
+//                         if [ "$STATUS" = "200" ]; then
+//                             echo "Deployment healthy at http://$EC2_HOST:5000"
+//                             exit 0
+//                         fi
+//                         echo "Attempt $i/10: got $STATUS, retrying..."
+//                         sleep 10
+//                     done
+//                     echo "Deployment health check failed"
+//                     exit 1
+//                 '''
+//             }
+//         }
+//     }
+
+//     post {
+//         always {
+//             node('built-in') {
+//                 cleanWs()
+//             }
+//         }
+
+//         success {
+//             script {
+//                 def email = env.ALERT_EMAIL ?: 'anmoldeepkaur1103@gmail.com'
+//                 def host = env.EC2_HOST ?: '18.232.208.228'
+//                 emailext(
+//                     subject: "Build #${env.BUILD_NUMBER} - Deployment Successful",
+//                     body: """
+//                         Monitoring system deployed successfully.
+//                         Build: ${env.BUILD_URL}
+//                         App: http://${host}:5000
+//                         Grafana: http://${host}:3000
+//                         Prometheus: http://${host}:9090
+//                     """,
+//                     to: email,
+//                     mimeType: 'text/html'
+//                 )
+//             }
+//         }
+
+//         failure {
+//             script {
+//                 def email = env.ALERT_EMAIL ?: 'anmoldeepkaur1103@gmail.com'
+//                 emailext(
+//                     subject: "Build #${env.BUILD_NUMBER} - Deployment Failed",
+//                     body: """
+//                         Monitoring system deployment failed.
+//                         Build: ${env.BUILD_URL}
+//                         Console: ${env.BUILD_URL}console
+//                     """,
+//                     to: email,
+//                     mimeType: 'text/html'
+//                 )
+//             }
+//         }
+//     }
+// }
+
 pipeline {
     agent any
 
@@ -8,10 +172,10 @@ pipeline {
     }
 
     environment {
-        EC2_SSH_KEY      = credentials('ec2-ssh-key')
-        EC2_HOST         = credentials('ec2-host')
-        ALERT_EMAIL      = 'anmoldeepkaur1103@gmail.com'
-        GMAIL_CREDS      = credentials('gmail-smtp')
+        EC2_SSH_KEY  = credentials('ec2-ssh-key')
+        EC2_HOST     = credentials('ec2-host')
+        ALERT_EMAIL  = 'anmoldeepkaur1103@gmail.com'
+        GMAIL_CREDS  = credentials('gmail-smtp')
     }
 
     stages {
@@ -33,7 +197,6 @@ pipeline {
             steps {
                 echo "Building Docker image..."
                 sh '''
-                    # Create .env file for docker compose
                     cat > docker/.env << EOF
 GF_SECURITY_ADMIN_PASSWORD=admin123
 GF_SMTP_USER=$GMAIL_CREDS_USR
@@ -63,7 +226,7 @@ EOF
                     STATUS=$(docker exec demo-app python -c "import urllib.request; r=urllib.request.urlopen('http://localhost:5000/health'); print(r.getcode())")
                     if [ "$STATUS" != "200" ]; then
                         echo "Health check failed: HTTP $STATUS"
-                        docker compose down app
+                        docker compose stop app
                         exit 1
                     fi
                     echo "Health check passed: HTTP $STATUS"
@@ -71,12 +234,12 @@ EOF
                     METRICS=$(docker exec demo-app python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:5000/metrics').read(20))")
                     if [ -z "$METRICS" ]; then
                         echo "Metrics endpoint not responding"
-                        docker compose down app
+                        docker compose stop app
                         exit 1
                     fi
                     echo "Metrics endpoint working"
 
-                    docker compose down app
+                    docker compose stop app
                 '''
             }
         }
@@ -84,17 +247,24 @@ EOF
         stage('Deploy') {
             steps {
                 echo "Deploying to EC2..."
-                sshagent(['ec2-ssh-key']) {
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no ubuntu@$EC2_HOST << 'ENDSSH'
-                        cd /opt/monitoring
-                        git pull origin main
-                        cd docker
-                        docker compose build app
+                sh '''
+                    # Write key to temp file
+                    echo "$EC2_SSH_KEY" > /tmp/deploy_key.pem
+                    chmod 600 /tmp/deploy_key.pem
+
+                    ssh -i /tmp/deploy_key.pem \
+                        -o StrictHostKeyChecking=no \
+                        -o PasswordAuthentication=no \
+                        ubuntu@$EC2_HOST '
+                        cd /opt/monitoring &&
+                        git pull origin main &&
+                        cd docker &&
+                        docker compose build app &&
                         docker compose up -d
-ENDSSH
-                    '''
-                }
+                    '
+
+                    rm -f /tmp/deploy_key.pem
+                '''
             }
         }
 
@@ -120,6 +290,7 @@ ENDSSH
 
     post {
         always {
+            sh 'rm -f /tmp/deploy_key.pem || true'
             node('built-in') {
                 cleanWs()
             }
@@ -127,7 +298,6 @@ ENDSSH
 
         success {
             script {
-                def email = env.ALERT_EMAIL ?: 'anmoldeepkaur1103@gmail.com'
                 def host = env.EC2_HOST ?: '18.232.208.228'
                 emailext(
                     subject: "Build #${env.BUILD_NUMBER} - Deployment Successful",
@@ -138,7 +308,7 @@ ENDSSH
                         Grafana: http://${host}:3000
                         Prometheus: http://${host}:9090
                     """,
-                    to: email,
+                    to: "${ALERT_EMAIL}",
                     mimeType: 'text/html'
                 )
             }
@@ -146,7 +316,6 @@ ENDSSH
 
         failure {
             script {
-                def email = env.ALERT_EMAIL ?: 'anmoldeepkaur1103@gmail.com'
                 emailext(
                     subject: "Build #${env.BUILD_NUMBER} - Deployment Failed",
                     body: """
@@ -154,10 +323,16 @@ ENDSSH
                         Build: ${env.BUILD_URL}
                         Console: ${env.BUILD_URL}console
                     """,
-                    to: email,
+                    to: "${ALERT_EMAIL}",
                     mimeType: 'text/html'
                 )
             }
         }
     }
 }
+
+
+
+
+
+
