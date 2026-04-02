@@ -8,9 +8,10 @@ pipeline {
     }
 
     environment {
-        EC2_SSH_KEY = credentials('ec2-ssh-key')
-        EC2_HOST    = credentials('ec2-host')
-        ALERT_EMAIL = 'anmoldeepkaur1103@gmail.com'
+        EC2_SSH_KEY      = credentials('ec2-ssh-key')
+        EC2_HOST         = credentials('ec2-host')
+        ALERT_EMAIL      = 'anmoldeepkaur1103@gmail.com'
+        GMAIL_CREDS      = credentials('gmail-smtp')
     }
 
     stages {
@@ -32,6 +33,13 @@ pipeline {
             steps {
                 echo "Building Docker image..."
                 sh '''
+                    # Create .env file for docker compose
+                    cat > docker/.env << EOF
+GF_SECURITY_ADMIN_PASSWORD=admin123
+GF_SMTP_USER=$GMAIL_CREDS_USR
+GF_SMTP_PASSWORD=$GMAIL_CREDS_PSW
+GF_ALERT_EMAIL=anmoldeepkaur1103@gmail.com
+EOF
                     cd docker
                     docker compose build app
                 '''
@@ -42,6 +50,12 @@ pipeline {
             steps {
                 echo "Running health check test..."
                 sh '''
+                    cat > docker/.env << EOF
+GF_SECURITY_ADMIN_PASSWORD=admin123
+GF_SMTP_USER=$GMAIL_CREDS_USR
+GF_SMTP_PASSWORD=$GMAIL_CREDS_PSW
+GF_ALERT_EMAIL=anmoldeepkaur1103@gmail.com
+EOF
                     cd docker
                     docker compose up -d app
                     sleep 10
