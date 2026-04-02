@@ -58,25 +58,25 @@ GF_ALERT_EMAIL=anmoldeepkaur1103@gmail.com
 EOF
                     cd docker
                     docker compose up -d app
-                    sleep 10
+                    sleep 15
 
-                    STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
+                    STATUS=$(docker exec demo-app curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
                     if [ "$STATUS" != "200" ]; then
                         echo "Health check failed: HTTP $STATUS"
-                        docker compose down
+                        docker compose down app
                         exit 1
                     fi
                     echo "Health check passed: HTTP $STATUS"
 
-                    METRICS=$(curl -s http://localhost:5000/metrics | head -c 20)
+                    METRICS=$(docker exec demo-app curl -s http://localhost:5000/metrics | head -c 20)
                     if [ -z "$METRICS" ]; then
                         echo "Metrics endpoint not responding"
-                        docker compose down
+                        docker compose down app
                         exit 1
                     fi
                     echo "Metrics endpoint working"
 
-                    docker compose down
+                    docker compose down app
                 '''
             }
         }
