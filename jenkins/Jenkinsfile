@@ -8,238 +8,135 @@ pipeline {
     }
 
     environment {
-        DOCKER_CREDENTIALS = credentials('docker-hub-credentials')
         EC2_SSH_KEY = credentials('ec2-ssh-key')
-        EC2_HOST = credentials('ec2-host')
-        AWS_CREDENTIALS = credentials('aws-credentials')
+        EC2_HOST    = credentials('ec2-host')
         ALERT_EMAIL = credentials('alert-email')
-        APP_IMAGE = "monitoring-demo-app"
-        DOCKER_REGISTRY = "docker.io"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                script {
-                    echo "⬇️ Checking out code from repository..."
-                    checkout scm
-                }
+                echo "Checking out code..."
+                checkout scm
             }
         }
 
         stage('Lint Dockerfile') {
             steps {
-                script {
-                    echo "🔍 Linting Dockerfile..."
-                    try {
-                        sh 'docker run --rm -i hadolint/hadolint < app/Dockerfile'
-                        echo "✅ Dockerfile linting passed"
-                    } catch (Exception e) {
-                        echo "⚠️ Dockerfile contains issues, but continuing..."
-                    }
-                }
+                echo "Linting Dockerfile..."
+                sh '''
+                    docker run --rm -i hadolint/hadolint < app/Dockerfile || echo "Lint warnings found, continuing..."
+                '''
             }
         }
 
-        stage('Build Application') {
+        stage('Build') {
             steps {
-                script {
-                    echo "🏗️ Building Docker image for demo app..."
-                    sh '''
-                        cd docker
-                        docker compose build app
-                        echo "✅ Image build completed"
-                    '''
-                }
+                echo "Building Docker image..."
+                sh '''
+                    cd docker
+                    docker compose build app
+                '''
             }
         }
 
         stage('Test') {
             steps {
-                script {
-                    echo "🧪 Running integration tests..."
-                    sh '''
-                        cd docker
-                        docker compose up -d app
-                        sleep 5
-                        
-                        echo "Testing application health endpoint..."
-                        STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
-                        
-                        if [ "$STATUS_CODE" == "200" ]; then
-                            echo "✅ Health check passed (HTTP $STATUS_CODE)"
-                        else
-                            echo "❌ Health check failed (HTTP $STATUS_CODE)"
-                            exit 1
-                        fi
-                        
-                        echo "Testing metrics endpoint..."
-                        METRICS=$(curl -s http://localhost:5000/metrics | head -c 20)
-                        if [ ! -z "$METRICS" ]; then
-                            echo "✅ Metrics endpoint working"
-                        else
-                            echo "❌ Metrics endpoint not responding"
-                            exit 1
-                        fi
-                        
+                echo "Running health check test..."
+                sh '''
+                    cd docker
+                    docker compose up -d app
+                    sleep 10
+
+                    STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
+                    if [ "$STATUS" != "200" ]; then
+                        echo "Health check failed: HTTP $STATUS"
                         docker compose down
-                    '''
-                }
+                        exit 1
+                    fi
+                    echo "Health check passed: HTTP $STATUS"
+
+                    METRICS=$(curl -s http://localhost:5000/metrics | head -c 20)
+                    if [ -z "$METRICS" ]; then
+                        echo "Metrics endpoint not responding"
+                        docker compose down
+                        exit 1
+                    fi
+                    echo "Metrics endpoint working"
+
+                    docker compose down
+                '''
             }
         }
 
-        stage('Push to Registry') {
-            when {
-                expression {
-                    return env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master' || env.BUILD_NUMBER == '1'
-                }
-            }
+        stage('Deploy') {
             steps {
-                script {
-                    echo "📤 Pushing image to Docker registry..."
-                    sh '''
-                        # This stage is conditional - only runs if ECR_REPO is configured
-                        if [ -z "$ECR_REPO" ]; then
-                            echo "⚠️ ECR_REPO not configured, skipping push"
-                            exit 0
-                        fi
-                        
-                        echo "Logging into AWS ECR..."
-                        aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $ECR_REPO
-                        
-                        docker tag $APP_IMAGE:latest $ECR_REPO/$APP_IMAGE:latest
-                        docker push $ECR_REPO/$APP_IMAGE:latest
-                        
-                        echo "✅ Image pushed successfully"
-                    '''
-                }
-            }
-        }
-
-        stage('Deploy to EC2') {
-            steps {
-                script {
-                    echo "🚀 Deploying to EC2 instance..."
-                    sh '''
-                        # Get EC2 IP from credentials or environment
-                        EC2_IP=$EC2_HOST
-                        
-                        # Deploy via SSH
-                        ssh -i $EC2_SSH_KEY -o StrictHostKeyChecking=no ubuntu@$EC2_IP << 'EOF'
-                            cd /opt/monitoring
-                            git pull origin main || echo "Git pull failed, using existing code"
-                            cd docker
-                            docker compose down app || true
-                            docker compose build app
-                            docker compose up -d app
-                            
-                            echo "✅ Application deployed successfully"
-                        EOF
-                    '''
-                }
+                echo "Deploying to EC2..."
+                sh '''
+                    ssh -i $EC2_SSH_KEY \
+                        -o StrictHostKeyChecking=no \
+                        ubuntu@$EC2_HOST << 'ENDSSH'
+                        cd /opt/monitoring
+                        git pull origin main
+                        cd docker
+                        docker compose build app
+                        docker compose up -d
+ENDSSH
+                '''
             }
         }
 
         stage('Health Check') {
             steps {
-                script {
-                    echo "❤️ Verifying deployment health..."
-                    sh '''
-                        EC2_IP=$EC2_HOST
-                        
-                        for i in {1..30}; do
-                            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://$EC2_IP:5000/health || echo "000")
-                            
-                            if [ "$STATUS_CODE" == "200" ]; then
-                                echo "✅ Application is healthy at http://$EC2_IP:5000"
-                                exit 0
-                            fi
-                            
-                            echo "Attempt $i/30: Health check returned $STATUS_CODE, retrying..."
-                            sleep 5
-                        done
-                        
-                        echo "❌ Application failed health check"
-                        exit 1
-                    '''
-                }
-            }
-        }
-
-        stage('Notify Success') {
-            when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
-            steps {
-                emailext(
-                    subject: "✅ Build #${env.BUILD_NUMBER} - Monitoring System Deployment Successful",
-                    body: """
-                        <h2>Deployment Successful</h2>
-                        <p>The monitoring system has been deployed successfully.</p>
-                        
-                        <h3>Build Details:</h3>
-                        <ul>
-                            <li><strong>Build Number:</strong> ${env.BUILD_NUMBER}</li>
-                            <li><strong>Build URL:</strong> ${env.BUILD_URL}</li>
-                            <li><strong>Branch:</strong> ${env.BRANCH_NAME ?: 'main'}</li>
-                        </ul>
-                        
-                        <h3>Access Points:</h3>
-                        <ul>
-                            <li><a href="http://${EC2_HOST}:5000">Demo Application</a></li>
-                            <li><a href="http://${EC2_HOST}:9090">Prometheus</a></li>
-                            <li><a href="http://${EC2_HOST}:3000">Grafana</a></li>
-                            <li><a href="http://${EC2_HOST}:3100">Loki</a></li>
-                            <li><a href="http://${EC2_HOST}:8080">Jenkins</a></li>
-                        </ul>
-                        
-                        <p>All systems are operational.</p>
-                    """.stripIndent(),
-                    to: '$ALERT_EMAIL',
-                    mimeType: 'text/html'
-                )
+                echo "Verifying deployment..."
+                sh '''
+                    for i in $(seq 1 10); do
+                        STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EC2_HOST:5000/health || echo "000")
+                        if [ "$STATUS" = "200" ]; then
+                            echo "Deployment healthy at http://$EC2_HOST:5000"
+                            exit 0
+                        fi
+                        echo "Attempt $i/10: got $STATUS, retrying..."
+                        sleep 10
+                    done
+                    echo "Deployment health check failed"
+                    exit 1
+                '''
             }
         }
     }
 
     post {
-        always {
-            echo "🧹 Cleaning up..."
-            sh '''
-                cd docker
-                docker compose down app || true
-                docker system prune -f || true
-            '''
-            cleanWs()
-        }
-
-        failure {
+        success {
             emailext(
-                subject: "❌ Build #${env.BUILD_NUMBER} - Monitoring System Deployment Failed",
+                subject: "Build #${env.BUILD_NUMBER} - Deployment Successful",
                 body: """
-                    <h2>Deployment Failed</h2>
-                    <p>The monitoring system deployment has failed.</p>
-                    
-                    <h3>Build Details:</h3>
-                    <ul>
-                        <li><strong>Build Number:</strong> ${env.BUILD_NUMBER}</li>
-                        <li><strong>Build URL:</strong> ${env.BUILD_URL}</li>
-                        <li><strong>Console Output:</strong> ${env.BUILD_URL}console</li>
-                    </ul>
-                    
-                    <p><strong>Please review the logs and fix any issues.</strong></p>
-                """.stripIndent(),
-                to: '$ALERT_EMAIL',
+                    Monitoring system deployed successfully.
+                    Build: ${env.BUILD_URL}
+                    App: http://${EC2_HOST}:5000
+                    Grafana: http://${EC2_HOST}:3000
+                    Prometheus: http://${EC2_HOST}:9090
+                """,
+                to: "${ALERT_EMAIL}",
                 mimeType: 'text/html'
             )
         }
 
-        unstable {
-            echo "⚠️ Build is unstable - check logs"
+        failure {
+            emailext(
+                subject: "Build #${env.BUILD_NUMBER} - Deployment Failed",
+                body: """
+                    Monitoring system deployment failed.
+                    Build: ${env.BUILD_URL}
+                    Console: ${env.BUILD_URL}console
+                """,
+                to: "${ALERT_EMAIL}",
+                mimeType: 'text/html'
+            )
         }
 
-        success {
-            echo "✅ Pipeline completed successfully"
+        always {
+            cleanWs()
         }
     }
 }

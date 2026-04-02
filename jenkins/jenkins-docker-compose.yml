@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   jenkins:
     image: jenkins/jenkins:lts-jdk17
@@ -10,9 +8,6 @@ services:
     volumes:
       - jenkins_home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Djenkins.plugins.slack.SlackNotifier.disabled=false
-      - DOCKER_HOST=unix:///var/run/docker.sock
     networks:
       - monitoring
     restart: unless-stopped
@@ -21,12 +16,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 60s
 
 networks:
   monitoring:
-    driver: bridge
     external: true
+    name: docker_monitoring
 
 volumes:
   jenkins_home:
