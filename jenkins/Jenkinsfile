@@ -112,31 +112,38 @@ ENDSSH
         }
 
         success {
-            emailext(
-                subject: "Build #${env.BUILD_NUMBER} - Deployment Successful",
-                body: """
-                    Monitoring system deployed successfully.
-                    Build: ${env.BUILD_URL}
-                    App: http://${env.EC2_HOST}:5000
-                    Grafana: http://${env.EC2_HOST}:3000
-                    Prometheus: http://${env.EC2_HOST}:9090
-                """,
-                to: "${env.ALERT_EMAIL}",
-                mimeType: 'text/html'
-            )
+            script {
+                def email = env.ALERT_EMAIL ?: 'anmoldeepkaur1103@gmail.com'
+                def host = env.EC2_HOST ?: '18.232.208.228'
+                emailext(
+                    subject: "Build #${env.BUILD_NUMBER} - Deployment Successful",
+                    body: """
+                        Monitoring system deployed successfully.
+                        Build: ${env.BUILD_URL}
+                        App: http://${host}:5000
+                        Grafana: http://${host}:3000
+                        Prometheus: http://${host}:9090
+                    """,
+                    to: email,
+                    mimeType: 'text/html'
+                )
+            }
         }
 
         failure {
-            emailext(
-                subject: "Build #${env.BUILD_NUMBER} - Deployment Failed",
-                body: """
-                    Monitoring system deployment failed.
-                    Build: ${env.BUILD_URL}
-                    Console: ${env.BUILD_URL}console
-                """,
-                to: "${env.ALERT_EMAIL}",
-                mimeType: 'text/html'
-            )
+            script {
+                def email = env.ALERT_EMAIL ?: 'anmoldeepkaur1103@gmail.com'
+                emailext(
+                    subject: "Build #${env.BUILD_NUMBER} - Deployment Failed",
+                    body: """
+                        Monitoring system deployment failed.
+                        Build: ${env.BUILD_URL}
+                        Console: ${env.BUILD_URL}console
+                    """,
+                    to: email,
+                    mimeType: 'text/html'
+                )
+            }
         }
     }
 }
