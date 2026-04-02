@@ -1,0 +1,264 @@
+# 🚀 Quick Start - Monitoring System Deployment
+
+## One-Command Start (After Prerequisites)
+
+```bash
+# 1. Clone/navigate to project
+cd monitoring-system
+
+# 2. Run setup (interactive)
+chmod +x scripts/setup.sh
+./scripts/setup.sh
+
+# That's it! Everything else is automated.
+```
+
+---
+
+## What Gets Deployed
+
+✅ **AWS Infrastructure** (Terraform)
+- VPC with public subnet
+- Security group (8 open ports)
+- t3.medium EC2 instance
+- Elastic IP
+- CloudWatch Log Group
+
+✅ **Monitoring Stack** (Docker Compose)
+- **Prometheus** (v2.49.0) - Metrics collection & storage
+- **Node Exporter** (v1.7.0) - System metrics
+- **Loki** (v2.9.3) - Log aggregation
+- **Promtail** (v2.9.3) - Log shipper
+- **Grafana** (v10.3.1) - Dashboards & alerts
+- **Demo App** (Flask) - Sample application with metrics
+
+✅ **CI/CD Pipeline** (Optional)
+- Jenkins with Docker support
+- Pre-configured Jenkinsfile
+- Automated deployment pipeline
+
+---
+
+## Requirements Checklist
+
+Before running setup:
+
+- [ ] AWS Account with permissions for EC2, VPC, IAM, CloudWatch
+- [ ] Terraform >= 1.6
+- [ ] AWS CLI configured with credentials (`aws configure`)
+- [ ] SSH Key Pair created in AWS EC2 Console
+- [ ] Key pair .pem file stored locally (~/.ssh/)
+- [ ] Docker & Docker Compose installed locally (for Jenkins/testing)
+
+---
+
+## Timeline
+
+| Phase | Time | What Happens |
+|-------|------|--------------|
+| **Setup** | 5 min | Interactive config questions |
+| **Terraform Init** | 2 min | Download AWS provider |
+| **Terraform Plan** | 1 min | Show infrastructure plan |
+| **Terraform Apply** | 5-10 min | Create AWS resources |
+| **EC2 Boot** | 3 min | Instance startup + Docker install |
+| **Container Startup** | 2-3 min | Pull images, start services |
+| **Initialization** | 2 min | Prometheus/Grafana first scrapes |
+| **Total** | ~20-25 min | Everything ready |
+
+After setup, access one of the URLs immediately - services initialize in background.
+
+---
+
+## After Setup - Next Steps
+
+### ✅ Verify Installation
+```bash
+# Get your IP from setup output, then:
+curl http://<IP>:5000/health        # App is running
+curl http://<IP>:9090/-/healthy    # Prometheus is ready
+```
+
+### ✅ Access Dashboards
+```
+Grafana:    http://<IP>:3000 (admin/admin123)
+Prometheus: http://<IP>:9090
+Loki:       http://<IP>:3100
+```
+
+### ✅ Generate Test Data
+```bash
+# CPU spike
+curl http://<IP>:5000/simulate/load
+
+# Error log
+curl http://<IP>:5000/simulate/error
+
+# Random data
+curl http://<IP>:5000/data
+```
+
+### ✅ View in Grafana
+1. Open Grafana: http://<IP>:3000
+2. Login: admin / admin123
+3. Go to Dashboards → System & Application Monitoring
+4. Wait 2-3 minutes for data to appear
+5. Trigger test endpoints above to see live updates
+
+### ✅ Configure Alerts (Optional)
+1. In Grafana, go to Alerting → Notification Policies
+2. Create contact point with your email
+3. Update notification policy
+4. Edit alert rules with your thresholds
+
+---
+
+## File Structure
+
+```
+monitoring-system/
+├── terraform/                          # AWS Infrastructure as Code
+│   ├── main.tf                        # 💥 Core - VPC, EC2, Security
+│   ├── variables.tf                   # 🔧 Configuration inputs
+│   ├── outputs.tf                     # 📊 Deployment outputs
+│   └── user_data.sh                   # ⚡ EC2 bootstrap script
+│
+├── app/                               # Sample Application
+│   ├── app.py                         # Flask app + Prometheus metrics
+│   ├── Dockerfile                     # Container image
+│   └── requirements.txt                # Python packages
+│
+├── docker/                            # Monitoring Stack
+│   ├── docker-compose.yml             # 💥 All 6 services
+│   ├── prometheus/
+│   │   └── prometheus.yml             # Scrape configs
+│   ├── loki/
+│   │   └── loki-config.yml            # Log storage
+│   ├── promtail/
+│   │   └── promtail-config.yml        # Log collection
+│   └── grafana/
+│       ├── grafana.ini                # Server config (SMTP, auth)
+│       ├── provisioning/
+│       │   ├── datasources/
+│       │   │   └── datasources.yml    # Prometheus + Loki
+│       │   ├── dashboards/
+│       │   │   ├── dashboards.yml     # Dashboard provider
+│       │   │   └── monitoring.json    # 💥 Main dashboard (8 panels)
+│       │   └── alerting/
+│       │       ├── contact-points.yml # Email notifications
+│       │       └── notification-policies.yml
+│
+├── jenkins/                           # CI/CD Pipeline
+│   ├── jenkins-docker-compose.yml     # Jenkins container
+│   ├── Jenkinsfile                    # 💥 7-stage pipeline
+│   └── casc.yml                       # Configuration as Code
+│
+├── scripts/                           # Automation
+│   ├── setup.sh                       # 💥 Main setup script
+│   └── deploy.sh                      # Redeployment helper
+│
+├── README.md                          # Full documentation
+├── QUICK-START.md                     # This file
+├── .env                               # Generated by setup.sh
+├── DEPLOY_INFO.txt                    # Generated by setup.sh
+└── terraform.tfstate                  # Generated by terraform
+```
+
+---
+
+## Common Commands
+
+```bash
+# SSH into EC2
+ssh -i ~/.ssh/<KEY_NAME>.pem ubuntu@<IP>
+
+# View container logs
+cd /opt/monitoring/docker
+docker compose logs -f
+
+# Restart services
+docker compose restart
+
+# Full rebuild
+docker compose down && docker compose up -d --build
+
+# Check service health
+docker compose ps
+
+# View Prometheus targets
+curl http://localhost:9090/api/v1/targets | jq
+
+# Query Prometheus
+curl 'http://localhost:9090/api/v1/query?query=up' | jq
+
+# Redeploy after code changes
+../deploy.sh
+```
+
+---
+
+## Troubleshooting Reference
+
+| Issue | Check | Fix |
+|-------|-------|-----|
+| Can't SSH to EC2 | Security group, key permissions | Check SG allows 22, chmod 400 .pem |
+| Services won't start | Docker logs | `docker compose logs` |
+| Prometheus empty | Check scrape targets | http://<IP>:9090/targets |
+| Grafana blank dashboard | Datasource connection | Check Prometheus health |
+| Promtail not logging | Volume mounts | Verify paths in compose |
+| Out of disk | Check /var/lib/docker | `docker system prune -a` |
+
+---
+
+## Production Considerations
+
+- [ ] **Use RDS** instead of local Prometheus storage
+- [ ] **Use managed Loki** (Grafana Cloud) for logs
+- [ ] **Enable TLS** for all services
+- [ ] **Use automated backups** for Grafana dashboards
+- [ ] **Set up auto-scaling** with Terraform
+- [ ] **Implement VPN/Bastion** for SSH access
+- [ ] **Enable CloudTrail** for audit logging
+- [ ] **Use RDS Snapshots** for recovery
+
+---
+
+## Need Help?
+
+1. **Check logs**: `docker compose logs -f service_name`
+2. **Verify connectivity**: `curl -v http://localhost:PORT`
+3. **Check Prometheus targets**: Visit http://<IP>:9090/targets
+4. **Review Grafana logs**: SSH and check `/var/lib/grafana/grafana.log`
+5. **Check Terraform**: `cd terraform && terraform state list`
+
+---
+
+## Cleanup
+
+```bash
+# Remove everything from AWS (be careful!)
+cd terraform
+terraform destroy
+
+# Remove local Docker data
+cd docker
+docker compose down -v
+docker system prune -a --volumes
+```
+
+---
+
+## Success Indicators ✨
+
+After 5-10 minutes, you should see:
+
+- ✅ Prometheus scraping targets (http://<IP>:9090/targets)
+- ✅ Application logs in Loki
+- ✅ Graphs on Grafana dashboard (initially flat, then data appears)
+- ✅ Node metrics from server (CPU, Memory, Disk)
+- ✅ Application metrics (request rate, latency)
+
+**Patience is key** - Prometheus first scrape happens at `now + scrape_interval` (15s default).
+
+---
+
+**Start here:** `./scripts/setup.sh`
