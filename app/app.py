@@ -110,7 +110,7 @@ def home():
     logger.info("Home endpoint accessed")
     return jsonify({
         "status": "ok",
-        "message": "Monitoring Demo App v2",
+        "message": "Monitoring Demo App - version3",
         "timestamp": datetime.utcnow().isoformat()
     }), 200
 
